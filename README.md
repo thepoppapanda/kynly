@@ -69,7 +69,7 @@ together before upgrades. Archive paths alone are not a backup procedure.
 
 For failures: `docker compose logs --tail 80 n8n postgres`.
 Review logs for secrets before sharing.
-LM Studio container networking passed; OpenClaw and GPU workers are later stages.
+LM Studio container networking passed. OpenClaw baseline is verified below; GPU workers remain later stages.
 No Docker socket or host project folders are mounted into n8n.
 
 ## Progress checkpoint — October 14, 2026
@@ -90,19 +90,64 @@ The manually created test workflows currently live in the local n8n database.
 They have not been exported or committed to this repository. Local secrets,
 database contents, and owner-account details are not committed.
 
-### Resume at Stage 4
+### Current checkpoint — October 15, 2026
 
-First inspect any existing Windows OpenClaw installation in PowerShell:
+OpenClaw 2026.10.3 (59cb447) is deployed through Compose with image digest
+`sha256:70b8dbd23f8d27a206f43f9828fdebc87289e50d56dc55177354c9270d764026`.
+Its external state volume is `kynly_openclaw_data`; Windows access is bound
+to `127.0.0.1:18789`. Token authentication and browser connection passed.
+Gateway restart, reconnection, and retained conversation were observed.
+
+#### Working configuration (local state, not committed)
+
+- LM Studio loaded context: 16384.
+- Provider: `custom-host-docker-internal-1234`.
+- Model: `qwen2.5-7b-instruct`.
+- Model metadata: `contextWindow: 32768`, `contextTokens: 16384`, `maxTokens: 512`.
+- `agents.defaults.params.maxTokens: 512`.
+- `tools.profile: "minimal"`, `tools.toolSearch: false`.
+- `tools.allow: ["session_status"]`; no global deny/alsoAllow values.
+- Do not set `agents.defaults.contextTokens`: this release rejects that retired key.
+- Local configuration backups exist as `openclaw.json.before-chat-repair`
+  and `openclaw.json.chat-only-working`. These include secrets and must remain private.
+
+Earlier testing encountered repeated tool operations (319 operations, 47 blocked)
+and stale replies. The original provider metadata incorrectly advertised 128000
+tokens while LM Studio loaded 8192. Multiple settings were changed during recovery;
+the individual root cause has not been isolated. A 512-token cap limits each
+model response; it is not a total tool-call/turn limit. General agent reliability
+and loop limits are not yet verified.
+
+#### Latest verified test
+
+In a fresh dashboard session:
+1. Asked for one session_status call and the current model.
+2. Received the correct model report (user measured 6 seconds, 76 tokens).
+3. Asked for 12 minus 5 without tools; received 7 (1 second, 2 tokens).
+4. Session-specific trajectory confirmed exactly one session_status call returning
+   ok in the first turn, and no tool calls in the second.
+
+Use the exact dashboard session key when inspecting traces. Unscoped tail output
+can select the main session instead of the conversation being tested.
 
 ```powershell
-Get-Command openclaw -ErrorAction SilentlyContinue |
-    Select-Object Name, Source
+docker compose exec openclaw node dist/index.js sessions --agent slate --active 15 --json
+docker compose exec openclaw node dist/index.js sessions tail --agent slate --session-key "<dashboard-session-key>" --tail 40
 ```
 
-If a command is found, run `openclaw --version` and record the result.
-Do not start or overwrite an existing Gateway until its configuration and
-deployment location are understood. Decide on a single managed deployment,
-then verify local Qwen chat and one harmless tool restricted to a sample folder.
+Current milestone: restricted OpenClaw chat/status baseline passes. Stage 4's
+scoped file-access and denied-access checks remain pending, followed by restart
+verification of the final scoped policy. Keep the one-tool allowlist until that
+test is prepared. Do not restore full tool access.
+
+Configuration validation before startup:
+```powershell
+docker compose run --rm -T --no-deps openclaw config validate
+```
+
+Compose files alone do not reproduce onboarding or these local policy settings
+on a fresh machine; a version-validated provisioning script is still needed.
+No credentials, state database, or local configuration backups are committed.
 
 ### Verified n8n-to-LM Studio request
 
