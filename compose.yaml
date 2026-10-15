@@ -45,6 +45,27 @@ services:
       retries: 30
       start_period: 30s
 
+  openclaw:
+    image: ghcr.io/openclaw/openclaw@sha256:70b8dbd23f8d27a206f43f9828fdebc87289e50d56dc55177354c9270d764026
+    restart: unless-stopped
+    init: true
+    entrypoint: ["node", "dist/index.js"]
+    command: ["gateway", "--bind", "lan", "--port", "18789"]
+    ports:
+      - "127.0.0.1:18789:18789"
+    environment:
+      TZ: America/Indiana/Indianapolis
+    volumes:
+      - openclaw_data:/home/node/.openclaw
+    networks:
+      - openclaw_network
+
 volumes:
   postgres_data:
   n8n_data:
+  openclaw_data:
+    external: true
+    name: kynly_openclaw_data
+
+networks:
+  openclaw_network:
