@@ -35,7 +35,7 @@ Do not paste .env or unredacted rendered Compose configuration into chats.
 
 n8n is pinned to 2.43.5 (the stable version listed by its docs when prepared).
 PostgreSQL is pinned to major 16; its minor tag can advance on pull.
-These files have not yet been runtime-tested on the target PC.
+The user validated this stack on the target PC on October 14, 2026; results below.
 
 ### Persistence test
 
@@ -69,5 +69,73 @@ together before upgrades. Archive paths alone are not a backup procedure.
 
 For failures: `docker compose logs --tail 80 n8n postgres`.
 Review logs for secrets before sharing.
-LM Studio container networking, OpenClaw, and GPU workers are later stages.
+LM Studio container networking passed; OpenClaw and GPU workers are later stages.
 No Docker socket or host project folders are mounted into n8n.
+
+## Progress checkpoint — October 14, 2026
+
+Tests were performed by the user on the Windows PC and reported in the setup session.
+
+| Stage | Result |
+| --- | --- |
+| 1: Prerequisites | Passed: Ubuntu and docker-desktop use WSL 2; Docker hello-world succeeded |
+| 2: Local inference | Passed: Qwen chat API, automatic tool selection, argument validation, local execution, and tool-result follow-up |
+| 3: Persistent automation | Passed: n8n and PostgreSQL healthy; account/workflow survived container recreation |
+| 3: Background schedule | Passed with browser closed; test workflow unpublished afterward |
+| 3: Container networking | Passed: host.docker.internal:1234/v1/models returned Qwen |
+| 3: Workflow inference | Passed: n8n HTTP Request to LM Studio returned expected response |
+| 4: OpenClaw | Not started; next session begins here |
+
+The manually created test workflows currently live in the local n8n database.
+They have not been exported or committed to this repository. Local secrets,
+database contents, and owner-account details are not committed.
+
+### Resume at Stage 4
+
+First inspect any existing Windows OpenClaw installation in PowerShell:
+
+```powershell
+Get-Command openclaw -ErrorAction SilentlyContinue |
+    Select-Object Name, Source
+```
+
+If a command is found, run `openclaw --version` and record the result.
+Do not start or overwrite an existing Gateway until its configuration and
+deployment location are understood. Decide on a single managed deployment,
+then verify local Qwen chat and one harmless tool restricted to a sample folder.
+
+### Verified n8n-to-LM Studio request
+
+HTTP Request node: POST
+`http://host.docker.internal:1234/v1/chat/completions`.
+JSON body, timeout 120000 milliseconds:
+
+```json
+{
+  "model": "qwen2.5-7b-instruct",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Reply with exactly: Kynly workflow inference is working."
+    }
+  ],
+  "temperature": 0,
+  "max_tokens": 60,
+  "stream": false
+}
+```
+
+Expected result: `choices[0].message.content` contains the requested sentence.
+This is a manual workflow; publication is not needed.
+
+### Remaining milestones
+
+4. OpenClaw installation inspection, deployment, local model and scoped tool test.
+5. Container development worker and separate Windows worker.
+6. Persistent resource-aware job coordinator (one heavy GPU job and up to two light jobs).
+7. Bounded research with saved source evidence.
+8. Email search, drafting, and separately controlled sending.
+9. Queued image generation and GPU memory release checks.
+10. 3D generation, Blender inspection, and Unity worker integration.
+11. Studio UI independent of background execution.
+12. Repeatable installer, repair, backup/restore, and startup verification.
