@@ -90,7 +90,7 @@ The manually created test workflows currently live in the local n8n database.
 They have not been exported or committed to this repository. Local secrets,
 database contents, and owner-account details are not committed.
 
-### Current checkpoint — October 15, 2026
+### Earlier status-only checkpoint — October 15, 2026
 
 OpenClaw 2026.10.3 (59cb447) is deployed through Compose with image digest
 `sha256:70b8dbd23f8d27a206f43f9828fdebc87289e50d56dc55177354c9270d764026`.
@@ -184,3 +184,81 @@ This is a manual workflow; publication is not needed.
 10. 3D generation, Blender inspection, and Unity worker integration.
 11. Studio UI independent of background execution.
 12. Repeatable installer, repair, backup/restore, and startup verification.
+
+## Latest checkpoint — October 15, 2026, 21:03 America/Indianapolis
+
+Stage 4 scoped read baseline now passes; restart verification of this final
+configuration remains pending. Earlier checkpoints above are historical.
+
+### Current local configuration
+
+- LM Studio serves `qwen/qwen3-14b` (Qwen3-14B Q4_K_M) with API-confirmed
+  loaded context 16384; native maximum 32768.
+- Last selected LM Studio runtime: `llama.cpp-win-x86_64-amd-rocm-avx2@1.22.2`.
+- OpenClaw provider remains `custom-host-docker-internal-1234`, pointing to
+  `http://host.docker.internal:1234/v1`.
+- Primary model is that provider's `qwen/qwen3-14b`, retaining its local auth profile.
+- Model metadata: contextWindow 32768, contextTokens 16384, maxTokens 512.
+- Per-model parameters: temperature 0.7, topP 0.8, maxTokens 512.
+- tools.profile=coding; tools.allow=[session_status, read];
+  tools.toolSearch=false; tools.fs.workspaceOnly=true.
+- tools.loopDetection.enabled=true; agents.defaults.timeoutSeconds=60.
+- Test prompts use /no_think.
+- Runtime exposed 3 tools despite the two-name allowlist: an earlier export
+  identified skills_read in addition to read and session_status. Do not treat
+  the allowlist as proof of the complete effective tool surface.
+- A general job coordinator/concurrency limit has not yet been implemented.
+
+### Evidence from the final scoped-read session
+
+User reported: one read returned exactly
+"Inventory: 23 brass washers. Inspection code: R8Q2-P6M5."
+in 16 seconds / 62 tokens.
+
+For the harmless outside-workspace file, the assistant reported a sandbox-root
+path denial. The same session's trajectory then confirmed:
+- first turn: one read call, read ok, completed successfully;
+- second turn: one read call, read error, completed successfully;
+- no repeating tool sequence in either turn.
+
+This supports the scoped boundary test. The final trace redacts arguments and
+error details; the exact outside-path error payload was not exported in this
+session. These two cases do not constitute a complete sandbox/security audit.
+
+### Diagnostic findings and limits
+
+Earlier READ_OK-style fixtures produced refusals, fabricated contents, and in
+some runs tool loops. A redacted export established that the intended file was
+read successfully and its marker was recorded, while the final answer invented
+different text.
+
+Direct mock-tool tests reproduced incorrect answers with Qwen2.5 and Qwen3 in
+LM Studio and with the same Qwen3 GGUF in standalone llama.cpp. A meaningful
+prose result ("Inventory: 37 copper gears. Inspection code: N7P4-Z2Q9.")
+was then reported accurately through both standalone llama.cpp and LM Studio.
+
+The marker resembling a success acknowledgment is a plausible contributor,
+not a proven complete root cause. Model, context, tool policy, prompt, and
+runtime changes were made during diagnosis, so no single fix was isolated.
+Do not describe the earlier failures as a confirmed LM Studio or Vulkan bug.
+
+Standalone llama 0.6.0-dev, build 11630 / commit 6868a52cb, was tested on
+127.0.0.1:8081 using the existing GGUF. It is a diagnostic comparison only;
+Kynly still uses LM Studio. Keep only the intended GPU model server loaded.
+
+Loop detection and the 60-second timeout passed configuration validation.
+Their actual ability to terminate a runaway has not been demonstrated in the
+final setup. A 512-token response cap is not a total run/tool-call budget.
+
+### Next test
+
+Restart OpenClaw; reconnect and create a fresh dashboard session. Repeat the
+meaningful workspace read and outside-workspace denial, then one no-tool
+arithmetic follow-up. Inspect the exact session key's trajectory.
+If these pass, close Stage 4's initial scoped-read milestone and begin Stage 5
+with isolated development workers. Do not enable shell/write tools on this
+agent as part of that transition.
+
+All onboarding credentials and live policy settings remain in the local
+OpenClaw volume, not in Git. Provisioning scripts must eventually reproduce
+the validated configuration without copying secrets.
