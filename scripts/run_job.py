@@ -126,7 +126,7 @@ def run_job(args):
     # Fixed lock location: changing --data-dir cannot bypass workspace serialization.
     lock = repo / ".kynly" / "worker-sandbox.lock"
     with workspace_lock(lock):
-        job_id = "job-" + uuid.uuid4().hex
+        job_id = getattr(args, "job_id", None) or "job-" + uuid.uuid4().hex
         directory = data / job_id
         directory.mkdir(parents=True)
         name = "kynly-" + job_id
