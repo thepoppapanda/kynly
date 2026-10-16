@@ -65,5 +65,60 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(len(queue.inspect(self.root, limit=1)), 1)
 
 
+class DispatchTests(unittest.TestCase):
+    setUp = QueueTests.setUp
+    submit = QueueTests.submit
+    def receipt(self, args, status='passed', code=0, cleanup=0):
+        import json
+        directory = Path(args.data_dir) / args.job_id
+        directory.mkdir(parents=True)
+        (directory / 'result.json').write_text(json.dumps({
+            'job_id': args.job_id, 'status': status, 'exit_code': code,
+            'finished_at': queue.now(), 'cleanup': {'exit_code': cleanup}}))
+
+    def test_fifo_and_failure_continues(self):
+        first = self.submit('one')
+        second = self.submit('two', task='probe-failure')
+        seen = []
+        def execute(args):
+            seen.append(args.job_id)
+            self.receipt(args, 'failed' if args.task == 'probe-failure' else 'passed',
+                         7 if args.task == 'probe-failure' else 0)
+        self.assertEqual(queue.drain(self.root, execute), [first['job_id'], second['job_id']])
+        self.assertEqual(seen, [first['job_id'], second['job_id']])
+        self.assertEqual(queue.inspect(self.root, second['job_id'])['exit_code'], 7)
+        self.assertEqual(queue.drain(self.root, execute), [])
+
+    def test_cancelled_job_is_skipped(self):
+        job = self.submit()
+        queue.cancel(self.root, job['job_id'])
+        self.assertEqual(queue.drain(self.root, lambda _: self.fail('Executed cancelled job')), [])
+
+    def test_crash_blocks_further_dispatch(self):
+        first = self.submit('one')
+        second = self.submit('two')
+        def crash(args):
+            raise RuntimeError('simulated runner crash')
+        with self.assertRaises(RuntimeError):
+            queue.drain(self.root, crash)
+        with self.assertRaises(RuntimeError):
+            queue.drain(self.root, lambda _: self.fail('Started after crash'))
+        self.assertEqual(queue.inspect(self.root, first['job_id'])['status'], 'running')
+        self.assertEqual(queue.inspect(self.root, second['job_id'])['status'], 'queued')
+
+    def test_cleanup_failure_stops_queue(self):
+        self.submit('one')
+        second = self.submit('two')
+        with self.assertRaises(RuntimeError):
+            queue.drain(self.root, lambda args: self.receipt(args, cleanup=1))
+        self.assertEqual(queue.inspect(self.root, second['job_id'])['status'], 'queued')
+
+    def test_worker_lock_rejects_another_worker(self):
+        lock = Path(queue.__file__).resolve().parents[1] / '.kynly' / 'queue-worker.lock'
+        with queue.workspace_lock(lock):
+            with self.assertRaises(RuntimeError):
+                queue.drain(self.root, lambda _: None)
+
+
 if __name__ == '__main__':
     unittest.main()
