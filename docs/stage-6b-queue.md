@@ -98,3 +98,74 @@ an API are the next checkpoint. No n8n or OpenClaw execution connection exists y
 The runner locks cover this checkout, not arbitrary checkouts or manual Docker
 commands. Tests exercise dispatch decisions with simulated runner receipts;
 actual Docker validation must be performed on the Windows host.
+
+## Checkpoint 3: explicit restart recovery
+
+Checkpoint 2 sequential execution and empty-queue behavior passed on Windows.
+Run `recover` after an unexpected worker shutdown, before `work`. It takes both
+checkout locks, cleans only exact generated container names for running jobs,
+and saves recovery.json next to the original, unchanged logs/results. A valid
+terminal receipt is imported; otherwise status becomes interrupted with code130.
+It never resubmits jobs. Repeat recover is a no-op once states are resolved.
+If Docker cleanup fails, the job remains running and dispatch stays blocked.
+This is explicit recovery, not an automatic Windows service or retry policy.
+
+First pull and run the 23 tests:
+
+```powershell
+git pull --ff-only
+py -3 -m unittest discover -s tests -v
+$LASTEXITCODE
+py -3 .\scripts\job_queue.py --data-dir D:\KynlyData\queue recover
+```
+
+Expect OK/0 and an empty recovered list on the existing healthy queue.
+
+For a real interruption test use this separate queue. These commands target only
+the Python worker process created here and its children; no other Python processes.
+Run all commands in the same PowerShell session so $worker is retained:
+
+```powershell
+py -3 .\scripts\job_queue.py --data-dir D:\KynlyData\recovery-test submit probe-timeout --timeout 120 --request-key recovery-sleep-001
+$pythonExe = py -3 -c "import sys; print(sys.executable)"
+$worker = Start-Process -FilePath $pythonExe -ArgumentList '.\scripts\job_queue.py','--data-dir','D:\KynlyData\recovery-test','work' -NoNewWindow -PassThru
+```
+
+Wait until the job prints its ID and Docker shows its running sleep container:
+
+```powershell
+docker ps --filter "name=kynly-job-"
+```
+
+Then promptly stop that worker tree (before the 120-second timeout), and recover:
+
+```powershell
+taskkill /PID $worker.Id /T /F
+$worker.WaitForExit()
+py -3 .\scripts\job_queue.py --data-dir D:\KynlyData\recovery-test work
+$LASTEXITCODE
+py -3 .\scripts\job_queue.py --data-dir D:\KynlyData\recovery-test recover
+py -3 .\scripts\job_queue.py --data-dir D:\KynlyData\recovery-test list
+docker ps -a --filter "name=kynly-job-"
+py -3 .\scripts\job_queue.py --data-dir D:\KynlyData\recovery-test recover
+```
+
+Expect work to refuse unresolved running state and exit1. Recover removes any
+remaining container and marks this job interrupted/130 (not passed or queued).
+The next recover returns an empty list. Logs and recovery evidence remain under
+D:\KynlyData\recovery-test\runs. If the job already timed out naturally, use a new
+request key and repeat; that does not test abrupt worker loss.
+
+Finally submit tests with a new key to recovery-test, run work, and expect passed/0:
+
+```powershell
+py -3 .\scripts\job_queue.py --data-dir D:\KynlyData\recovery-test submit tests --request-key recovery-followup-001
+py -3 .\scripts\job_queue.py --data-dir D:\KynlyData\recovery-test work
+```
+
+Current scope is one checkout on a local disk. Recovery cannot coordinate other
+checkouts or manually launched containers. Terminate a stranded worker's process
+tree before recovery, since an orphaned Docker CLI is outside the OS file lock.
+Full machine power-loss durability, a background service, and the status API are
+not validated by these tests. Docker recovery tests run manually on Windows;
+unit tests simulate daemon responses and persisted receipts.
