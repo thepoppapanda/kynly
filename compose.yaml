@@ -60,6 +60,27 @@ services:
     networks:
       - openclaw_network
 
+  dev-worker:
+    profiles: ["development"]
+    build:
+      context: ./workers/python
+    init: true
+    working_dir: /workspace
+    user: "10001:10001"
+    network_mode: none
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 2
+    mem_limit: 2g
+    pids_limit: 128
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,mode=1777
+    volumes:
+      - type: bind
+        source: ./examples/worker-sandbox
+        target: /workspace
+
 volumes:
   postgres_data:
   n8n_data:
