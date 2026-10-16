@@ -1,0 +1,111 @@
+"""Persistent Kynly queue storage. This milestone stores jobs; it executes none."""
+import argparse
+from contextlib import contextmanager
+import json
+from pathlib import Path
+import sqlite3
+import sys
+import uuid
+
+from run_job import TASKS, now
+
+
+@contextmanager
+def database(data_dir):
+    root = Path(data_dir).expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(root / 'queue.sqlite3', timeout=15)
+    connection.row_factory = sqlite3.Row
+    try:
+        connection.execute('''CREATE TABLE IF NOT EXISTS jobs (
+            sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL UNIQUE,
+            request_key TEXT NOT NULL UNIQUE,
+            task TEXT NOT NULL,
+            timeout_seconds REAL NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('queued', 'cancelled')),
+            created_at TEXT NOT NULL,
+            finished_at TEXT
+        )''')
+        connection.commit()
+        yield connection
+    finally:
+        connection.close()
+
+
+def submit(data_dir, task, timeout, request_key):
+    if task not in TASKS:
+        raise ValueError('Unknown task')
+    if not 0 < timeout <= 3600:
+        raise ValueError('Timeout must be greater than 0 and at most 3600')
+    if not request_key or len(request_key) > 200:
+        raise ValueError('Request key must contain 1 to 200 characters')
+    with database(data_dir) as db:
+        # Serialize the lookup and insert across independent submitting processes.
+        with db:
+            db.execute('BEGIN IMMEDIATE')
+            existing = db.execute('SELECT * FROM jobs WHERE request_key=?', (request_key,)).fetchone()
+            if existing:
+                if existing['task'] != task or existing['timeout_seconds'] != timeout:
+                    raise ValueError('Request key already belongs to different job parameters')
+                return dict(existing)
+            job_id = 'job-' + uuid.uuid4().hex
+            db.execute('''INSERT INTO jobs
+                (job_id, request_key, task, timeout_seconds, status, created_at)
+                VALUES (?, ?, ?, ?, 'queued', ?)''', (job_id, request_key, task, timeout, now()))
+            return dict(db.execute('SELECT * FROM jobs WHERE job_id=?', (job_id,)).fetchone())
+
+
+def inspect(data_dir, job_id=None, limit=50):
+    with database(data_dir) as db:
+        if job_id:
+            row = db.execute('SELECT * FROM jobs WHERE job_id=?', (job_id,)).fetchone()
+            if row is None:
+                raise ValueError('Job not found')
+            return dict(row)
+        return [dict(row) for row in db.execute('SELECT * FROM jobs ORDER BY sequence DESC LIMIT ?', (limit,))]
+
+
+def cancel(data_dir, job_id):
+    with database(data_dir) as db:
+        with db:
+            row = db.execute('SELECT * FROM jobs WHERE job_id=?', (job_id,)).fetchone()
+            if row is None:
+                raise ValueError('Job not found')
+            db.execute("UPDATE jobs SET status='cancelled', finished_at=? WHERE job_id=? AND status='queued'", (now(), job_id))
+        return dict(db.execute('SELECT * FROM jobs WHERE job_id=?', (job_id,)).fetchone())
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--data-dir', required=True)
+    commands = parser.add_subparsers(dest='operation', required=True)
+    add = commands.add_parser('submit')
+    add.add_argument('task', choices=TASKS)
+    add.add_argument('--timeout', type=float, default=30)
+    add.add_argument('--request-key', required=True)
+    listing = commands.add_parser('list')
+    listing.add_argument('--limit', type=int, default=50)
+    for command in ('show', 'cancel'):
+        commands.add_parser(command).add_argument('job_id')
+    args = parser.parse_args()
+    try:
+        if args.operation == 'submit':
+            result = submit(args.data_dir, args.task, args.timeout, args.request_key)
+        elif args.operation == 'cancel':
+            result = cancel(args.data_dir, args.job_id)
+        elif args.operation == 'show':
+            result = inspect(args.data_dir, args.job_id)
+        else:
+            if not 1 <= args.limit <= 1000:
+                raise ValueError('Limit must be between 1 and 1000')
+            result = inspect(args.data_dir, limit=args.limit)
+        print(json.dumps(result, indent=2))
+        return 0
+    except (OSError, ValueError, sqlite3.Error) as error:
+        print('Error: ' + str(error), file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
