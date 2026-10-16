@@ -276,3 +276,31 @@ The Docker build, worker resource restrictions, intentional-failure reporting,
 and persistence on the Windows host are pending user validation.
 Start with the guide's build and default test commands. No agent has worker
 access yet; OpenClaw's settings were not changed for Stage 5.
+
+## Validated checkpoint — October 15, 2026, 21:37 America/Indianapolis
+
+User-tested on the target Windows PC:
+
+- Stage 5 manual development worker: four sample tests passed; deliberate exit 7
+  propagated; UID/GID 10001 confirmed; edited note persisted in a fresh container
+  and Windows; deliberate batching regression caused two failures, then restoring
+  the function returned tests to OK / exit 0.
+- Stage 6A host runner: Python 3.14.7 reported; normal job passed / exit 0 and
+  result.json + output.log were saved under D:\KynlyData\jobs.
+- Failure probe: failed / exit 7.
+- Five-second timeout probe: timed_out / exit 124.
+- Concurrent same-workspace submission: Workspace busy / exit 1.
+- Cancellation request: active job cancelled / exit 130.
+- Docker job-container listing empty after timeout and cancellation.
+
+This validates the manual worker baseline and synchronous bounded-runner
+lifecycle, not a durable queue or autonomous coding agent.
+
+Next: Stage 6B durable job queue and recovery design/implementation. Preserve
+named task admission and workspace serialization; add queued/running/terminal
+states, request idempotency, restart reconciliation, and status/cancel operations.
+Only then connect n8n/OpenClaw as submitters. GPU resource admission and Windows
+application workers remain later tasks. OpenClaw permissions are unchanged.
+
+Docs: [Stage 5](docs/stage-5-development-worker.md),
+[Stage 6A](docs/stage-6-job-runner.md).
