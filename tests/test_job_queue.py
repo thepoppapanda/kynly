@@ -120,5 +120,55 @@ class DispatchTests(unittest.TestCase):
                 queue.drain(self.root, lambda _: None)
 
 
+class RecoveryTests(unittest.TestCase):
+    setUp = QueueTests.setUp
+    submit = QueueTests.submit
+    receipt = DispatchTests.receipt
+
+    def stranded(self):
+        job = self.submit()
+        with queue.database(self.root) as db:
+            with db:
+                db.execute("UPDATE jobs SET status='running' WHERE job_id=?", (job['job_id'],))
+        return job
+
+    def test_missing_receipt_is_interrupted_without_retry(self):
+        job = self.stranded()
+        names = []
+        result = queue.recover(self.root, lambda name: names.append(name) or {'exit_code': 0})
+        self.assertEqual(names, ['kynly-' + job['job_id']])
+        self.assertEqual(result[0]['status'], 'interrupted')
+        self.assertEqual(queue.inspect(self.root, job['job_id'])['exit_code'], 130)
+        self.assertEqual(queue.recover(self.root, lambda _: self.fail('Repeated cleanup')), [])
+        self.assertEqual(self.submit()['status'], 'interrupted')
+
+    def test_terminal_receipt_restored(self):
+        import argparse
+        job = self.stranded()
+        self.receipt(argparse.Namespace(data_dir=str(Path(self.root)/'runs'), job_id=job['job_id']), 'failed', 7)
+        result = queue.recover(self.root, lambda _: {'exit_code': 1, 'output': 'Error: No such container'})
+        self.assertEqual(result[0]['source'], 'terminal_receipt')
+        self.assertEqual(queue.inspect(self.root, job['job_id'])['exit_code'], 7)
+
+    def test_docker_unavailable_keeps_running(self):
+        job = self.stranded()
+        with self.assertRaises(RuntimeError):
+            queue.recover(self.root, lambda _: {'exit_code': 1, 'output': 'Cannot connect to daemon'})
+        self.assertEqual(queue.inspect(self.root, job['job_id'])['status'], 'running')
+
+    def test_live_worker_blocks_recovery(self):
+        lock = Path(queue.__file__).resolve().parents[1]/'.kynly'/'queue-worker.lock'
+        with queue.workspace_lock(lock):
+            with self.assertRaises(RuntimeError):
+                queue.recover(self.root, lambda _: self.fail('Cleaned live worker'))
+
+    def test_malformed_receipt_is_not_success(self):
+        job = self.stranded()
+        directory = Path(self.root)/'runs'/job['job_id']
+        directory.mkdir(parents=True)
+        (directory/'result.json').write_text('{broken')
+        self.assertEqual(queue.recover(self.root, lambda _: {'exit_code': 0})[0]['status'], 'interrupted')
+
+
 if __name__ == '__main__':
     unittest.main()
