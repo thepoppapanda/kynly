@@ -7,7 +7,7 @@ import sqlite3
 import sys
 import uuid
 
-from run_job import TASKS, TERMINAL, now, run_job, workspace_lock
+from run_job import TASKS, TERMINAL, now, run_job, workspace_lock, cleanup_container, save_json
 
 
 @contextmanager
@@ -135,6 +135,60 @@ def drain(data_dir, execute=run_job):
             completed.append(job['job_id'])
 
 
+def recover(data_dir, cleanup=cleanup_container):
+    root = Path(data_dir).expanduser().resolve()
+    repo = Path(__file__).resolve().parents[1]
+    recovered = []
+    with workspace_lock(repo / '.kynly' / 'queue-worker.lock'):
+        with workspace_lock(repo / '.kynly' / 'worker-sandbox.lock'):
+            with database(root) as db:
+                jobs = [dict(row) for row in db.execute("SELECT * FROM jobs WHERE status='running' ORDER BY sequence")]
+            for job in jobs:
+                job_id = job['job_id']
+                suffix = job_id.removeprefix('job-')
+                if not job_id.startswith('job-') or len(suffix) != 32 or any(c not in '0123456789abcdef' for c in suffix):
+                    raise RuntimeError('Invalid stored job ID; recovery stopped')
+                directory = root / 'runs' / job_id
+                directory.mkdir(parents=True, exist_ok=True)
+                # Recompute paths and names; never execute stored command text.
+                result_path = directory / 'result.json'
+                receipt = None
+                receipt_error = None
+                try:
+                    candidate = json.loads(result_path.read_text(encoding='utf-8'))
+                    if (isinstance(candidate, dict) and candidate.get('job_id') == job_id
+                            and candidate.get('status') in TERMINAL
+                            and type(candidate.get('exit_code')) is int
+                            and isinstance(candidate.get('finished_at'), str)):
+                        receipt = candidate
+                    else:
+                        receipt_error = 'No valid terminal receipt'
+                except (OSError, ValueError) as error:
+                    receipt_error = str(error)
+                cleanup_result = cleanup('kynly-' + job_id)
+                if (cleanup_result.get('exit_code') != 0
+                        and 'no such container' not in cleanup_result.get('output', '').lower()):
+                    raise RuntimeError('Recovery cleanup unconfirmed for ' + job_id + '; job remains running')
+                outcome = {
+                    'job_id': job_id,
+                    'status': receipt['status'] if receipt else 'interrupted',
+                    'exit_code': receipt['exit_code'] if receipt else 130,
+                    'finished_at': receipt['finished_at'] if receipt else now(),
+                    'recovered_at': now(), 'cleanup': cleanup_result,
+                    'source': 'terminal_receipt' if receipt else 'interrupted_without_terminal_receipt',
+                    'receipt_error': receipt_error,
+                }
+                # Persist recovery evidence before committing the queue state.
+                # Original result/log files are retained unchanged.
+                save_json(directory / 'recovery.json', outcome)
+                with database(root) as db:
+                    with db:
+                        db.execute("UPDATE jobs SET status=?,exit_code=?,finished_at=? WHERE job_id=? AND status='running'",
+                                   (outcome['status'],outcome['exit_code'],outcome['finished_at'],job_id))
+                recovered.append(outcome)
+    return recovered
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', required=True)
@@ -144,13 +198,16 @@ def main():
     add.add_argument('--timeout', type=float, default=30)
     add.add_argument('--request-key', required=True)
     commands.add_parser('work')
+    commands.add_parser('recover')
     listing = commands.add_parser('list')
     listing.add_argument('--limit', type=int, default=50)
     for command in ('show', 'cancel'):
         commands.add_parser(command).add_argument('job_id')
     args = parser.parse_args()
     try:
-        if args.operation == 'work':
+        if args.operation == 'recover':
+            result = {'recovered': recover(args.data_dir)}
+        elif args.operation == 'work':
             result = {'completed': drain(args.data_dir)}
         elif args.operation == 'submit':
             result = submit(args.data_dir, args.task, args.timeout, args.request_key)
