@@ -262,3 +262,17 @@ agent as part of that transition.
 All onboarding credentials and live policy settings remain in the local
 OpenClaw volume, not in Git. Provisioning scripts must eventually reproduce
 the validated configuration without copying secrets.
+
+## Stage 4 restart passed; Stage 5 prepared
+
+The user confirmed the final Qwen3 scoped-read configuration works after Gateway
+restart, including the accurate workspace read and no-tool arithmetic follow-up.
+Stage 4's initial scoped-read milestone is complete; broader agent reliability
+and adversarial containment remain outside this test.
+
+Stage 5 files are now available: [development worker guide](docs/stage-5-development-worker.md).
+The sample's four Python tests passed during preparation outside Docker.
+The Docker build, worker resource restrictions, intentional-failure reporting,
+and persistence on the Windows host are pending user validation.
+Start with the guide's build and default test commands. No agent has worker
+access yet; OpenClaw's settings were not changed for Stage 5.
