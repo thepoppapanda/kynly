@@ -67,3 +67,20 @@ The private token file is retained; no recopy or display is necessary.
 Model submission test will use openclaw-tests-001, one call, reporting the job ID
 and recorded status. Retry with the same key must return the same job ID. Then
 query status once after worker completion and compare it against the queue record.
+
+## Slate instructions and validated submission
+
+The user confirmed one tests submission, passed/0 on status lookup, and the same
+job ID on duplicate submission with openclaw-tests-001. The queued response made
+an unsupported notification promise; no notification service is configured.
+KYNLY_JOB_RULES.md supplies explicit reporting and retry rules. These instructions
+improve behavior but are not a technical authorization boundary; adapter/API
+validation and existing tool policy still enforce executable scope.
+
+Install the rules in a managed block in the existing workspace AGENTS.md, preserving
+other content and making a timestamped backup before each change. Use fresh chat
+for verification. Test one status call and the question whether the connector can
+notify later: it should report that notifications are not configured, without
+submitting another job. Existing tests-only tools remain unchanged.
+Actual Windows sign-in behavior remains unvalidated until a fresh sign-in; the
+manual task and background host lifecycle checks passed.
