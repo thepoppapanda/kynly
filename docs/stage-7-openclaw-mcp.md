@@ -33,3 +33,37 @@ Current adapter protocol version2025-03-26; actual installed MCP negotiation and
 model use require follow-up testing. It limits API requests to10seconds and
 refuses redirects. Original private token should never be pasted in chat, workflow
 exports or git. Credential is in the existing secret-bearing OpenClaw volume.
+
+## Fixed tests submission (adapter 0.2.0)
+
+Read-only discovery, authenticated API reads, and model calls for known and missing
+jobs passed. A model stall also affected direct LM Studio inference; model reload
+restored READY and the missing-job tool returned404. No timeout increase was made.
+An explanation that completed jobs are removed was speculative: completed queue
+records are retained.
+
+The adapter now also advertises kynly_submit_tests. Its only argument is request_key
+(1–100 ASCII letters/digits/period/underscore/colon/hyphen, first character alphanumeric).
+It POSTs exactly tasktests, timeout_seconds30. No command, task selector, path, URL,
+cancel, or timeout argument is exposed. Same key repeats are deduplicated by the
+existing queue database. Keys are global within that database, including n8n jobs;
+use the openclaw- prefix for clarity. Different keys intentionally create new jobs.
+Queue receipts are not proof that tests passed; query the recorded job status later.
+
+```powershell
+cd D:\Projects\kynly
+git pull --ff-only
+docker compose cp .\integrations\openclaw\kynly-mcp.mjs openclaw:/home/node/.openclaw/kynly-tools/kynly-mcp.mjs
+docker compose cp .\integrations\openclaw\kynly-mcp.test.mjs openclaw:/home/node/.openclaw/kynly-tools/kynly-mcp.test.mjs
+docker compose exec openclaw node --test /home/node/.openclaw/kynly-tools/kynly-mcp.test.mjs
+docker compose exec openclaw node dist/index.js mcp tools --help
+```
+
+Expect6 passing Node tests. Next update the server include-filter and global tool
+allowlist using installed CLI options, validate, and restart/reset the session.
+Do not remove existing read/status tools or enable tool search. Until both policy
+layers allow the new tool, the model should retain only previous connector access.
+The private token file is retained; no recopy or display is necessary.
+Model submission test will use openclaw-tests-001, one call, reporting the job ID
+and recorded status. Retry with the same key must return the same job ID. Then
+query status once after worker completion and compare it against the queue record.
