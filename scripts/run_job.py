@@ -97,14 +97,33 @@ def monitor(process, timeout, cancel_path):
 
 
 def cleanup_container(name):
+    result = {}
     try:
         completed = subprocess.run(
             ["docker", "rm", "-f", name], capture_output=True, text=True, timeout=15
         )
-        return {"exit_code": completed.returncode,
-                "output": (completed.stdout + completed.stderr).strip()}
+        result = {"exit_code": completed.returncode,
+                  "output": (completed.stdout + completed.stderr).strip()}
+        if completed.returncode == 0:
+            return result
     except (OSError, subprocess.TimeoutExpired) as error:
-        return {"exit_code": None, "error": str(error)}
+        result = {"exit_code": None, "error": str(error)}
+    # Ctrl+C can interrupt a Docker client while --rm removes the container.
+    # Ask the daemon for the exact name before deciding cleanup is unresolved.
+    try:
+        check = subprocess.run(
+            ["docker", "container", "ls", "--all", "--filter", "name=^/" + name + "$",
+             "--format", "{{.Names}}"], capture_output=True, text=True, timeout=15
+        )
+        result["verification"] = {"exit_code": check.returncode,
+                                  "output": (check.stdout + check.stderr).strip()}
+        if check.returncode == 0 and not check.stdout.strip():
+            result["removal_exit_code"] = result["exit_code"]
+            result["exit_code"] = 0
+            result["verified_absent"] = True
+    except (OSError, subprocess.TimeoutExpired) as error:
+        result["verification_error"] = str(error)
+    return result
 
 
 def stop_process(process):
