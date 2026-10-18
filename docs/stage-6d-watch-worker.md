@@ -54,3 +54,21 @@ not the HTTP API. No scheduling, automatic restart, GPU admission, or concurrenc
 across independent checkouts is added. API executes_jobs remainsfalse because
 the API process itself only stores requests. New unit tests cover idle arrival,
 stop/lock release, active interruption halting the next job, and poll validation.
+
+## Active Ctrl+C follow-up
+
+Windows idle stop, lock release, and scheduled n8n execution passed. The active
+stop test saved an interrupted/130 terminal receipt but queue synchronization
+stopped with Container cleanup unconfirmed. Explicit recovery imported that
+receipt and found no container. The original removal command's exact failure
+has not yet been inspected, so the precise Windows signal behavior is unproven.
+
+Cleanup now verifies exact-name container absence through a successful Docker
+container-list request if removal fails or times out. A successful empty result
+normalizes cleanup to0 while retaining the original removal exit code and the
+verification output. A live container or daemon failure remains unresolved.
+35 tests pass, including removal interruption with confirmed absence, a remaining
+container, and unavailable daemon. Repeat the active stop on Windows with a fresh
+request key active-stop-002. Expect interrupted/130 recorded directly in the queue,
+worker stopped, no container, and recover returning an empty list. If it still
+blocks, retain and inspect the job's result.json cleanup field before recovering.
