@@ -67,7 +67,9 @@ def serve(data_dir, token, runtime, instance, port=8787):
 def status(runtime=RUNTIME):
     runtime = Path(runtime)
     path = runtime / 'state.json'
-    state = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {'status': 'stopped'}
+    if not path.exists():
+        return {'status': 'stopped'}
+    state = json.loads(path.read_text(encoding='utf-8'))
     try:
         with workspace_lock(runtime / 'host.lock'):
             if state.get('status') in ('running', 'starting'):
