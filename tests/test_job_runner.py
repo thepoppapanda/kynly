@@ -60,3 +60,31 @@ class RunnerTests(unittest.TestCase):
             (root / "add").write_text("new")
             self.assertEqual(runner.changes(before, runner.snapshot(root)),
                              {"added": ["add"], "removed": ["remove"], "modified": ["edit"]})
+
+
+class CleanupTests(unittest.TestCase):
+    def test_interrupted_removal_with_confirmed_absence(self):
+        from unittest.mock import patch
+        replies = [subprocess.CompletedProcess([], 130, '', ''),
+                   subprocess.CompletedProcess([], 0, '', '')]
+        with patch.object(runner.subprocess, 'run', side_effect=replies) as mocked:
+            result = runner.cleanup_container('kynly-job-test')
+        self.assertEqual(result['exit_code'], 0)
+        self.assertEqual(result['removal_exit_code'], 130)
+        self.assertTrue(result['verified_absent'])
+        self.assertIn('name=^/kynly-job-test$', mocked.call_args.args[0])
+
+    def test_remaining_container_is_unresolved(self):
+        from unittest.mock import patch
+        replies = [subprocess.CompletedProcess([], 1, '', 'removal failed'),
+                   subprocess.CompletedProcess([], 0, 'kynly-job-test\n', '')]
+        with patch.object(runner.subprocess, 'run', side_effect=replies):
+            self.assertEqual(runner.cleanup_container('kynly-job-test')['exit_code'], 1)
+
+    def test_unavailable_daemon_does_not_confirm_absence(self):
+        from unittest.mock import patch
+        failure = subprocess.CompletedProcess([], 1, '', 'cannot connect to daemon')
+        with patch.object(runner.subprocess, 'run', return_value=failure):
+            result = runner.cleanup_container('kynly-job-test')
+        self.assertEqual(result['exit_code'], 1)
+        self.assertNotIn('verified_absent', result)
