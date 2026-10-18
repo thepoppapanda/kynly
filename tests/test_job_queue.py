@@ -170,5 +170,52 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(queue.recover(self.root, lambda _: {'exit_code': 0})[0]['status'], 'interrupted')
 
 
+class WatchTests(unittest.TestCase):
+    setUp = QueueTests.setUp
+    submit = QueueTests.submit
+    receipt = DispatchTests.receipt
+
+    def test_pickup_after_idle_and_stop(self):
+        import threading
+        stop = threading.Event()
+        picked = []
+        class SubmitOnWait:
+            def is_set(inner):
+                return stop.is_set()
+            def wait(inner, seconds):
+                self.submit('late-arrival')
+        def execute(args):
+            picked.append(args.job_id)
+            self.receipt(args)
+            stop.set()
+        self.assertEqual(queue.drain(self.root, execute, watch=True, stop_event=SubmitOnWait()), [])
+        self.assertEqual(len(picked), 1)
+        self.assertEqual(queue.inspect(self.root, picked[0])['status'], 'passed')
+        self.assertEqual(queue.drain(self.root, lambda _: self.fail('Repeated job')), [])
+
+    def test_idle_stop_releases_worker_lock(self):
+        class StopAfterWait:
+            stopped = False
+            def is_set(inner):
+                return inner.stopped
+            def wait(inner, seconds):
+                inner.stopped = True
+        queue.drain(self.root, watch=True, stop_event=StopAfterWait())
+        self.assertEqual(queue.drain(self.root), [])
+
+    def test_active_interrupt_does_not_start_next_job(self):
+        first = self.submit('one')
+        second = self.submit('two')
+        with self.assertRaises(KeyboardInterrupt):
+            queue.drain(self.root, lambda args: self.receipt(args, 'interrupted', 130), watch=True)
+        self.assertEqual(queue.inspect(self.root, first['job_id'])['status'], 'interrupted')
+        self.assertEqual(queue.inspect(self.root, second['job_id'])['status'], 'queued')
+
+    def test_invalid_poll_interval(self):
+        for value in (0, 61, float('nan')):
+            with self.assertRaises(ValueError):
+                queue.drain(self.root, watch=True, poll_seconds=value)
+
+
 if __name__ == '__main__':
     unittest.main()
