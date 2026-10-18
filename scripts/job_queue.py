@@ -2,6 +2,8 @@
 import argparse
 from contextlib import contextmanager
 import json
+import math
+import threading
 from pathlib import Path
 import sqlite3
 import sys
@@ -97,25 +99,33 @@ def cancel(data_dir, job_id):
         return dict(db.execute('SELECT * FROM jobs WHERE job_id=?', (job_id,)).fetchone())
 
 
-def drain(data_dir, execute=run_job):
+def drain(data_dir, execute=run_job, watch=False, poll_seconds=2, stop_event=None):
+    if not math.isfinite(poll_seconds) or not 0.1 <= poll_seconds <= 60:
+        raise ValueError('Poll interval must be between 0.1 and 60 seconds')
+    stop_event = stop_event if stop_event is not None else threading.Event()
     root = Path(data_dir).expanduser().resolve()
     repo = Path(__file__).resolve().parents[1]
     completed = []
     # Fixed checkout lock also prevents workers with different data directories.
     with workspace_lock(repo / '.kynly' / 'queue-worker.lock'):
-        while True:
+        while not stop_event.is_set():
             with database(root) as db:
                 with db:
                     db.execute('BEGIN IMMEDIATE')
                     if db.execute("SELECT 1 FROM jobs WHERE status='running'").fetchone():
                         raise RuntimeError('Unresolved running job: recovery required; no jobs started')
                     row = db.execute("SELECT * FROM jobs WHERE status='queued' ORDER BY sequence LIMIT 1").fetchone()
-                    if row is None:
-                        return completed
-                    job = dict(row)
-                    result_path = root / 'runs' / job['job_id'] / 'result.json'
-                    db.execute("UPDATE jobs SET status='running', started_at=?, result_path=? WHERE job_id=?",
-                               (now(), str(result_path), job['job_id']))
+                    if row is not None:
+                        job = dict(row)
+                        result_path = root / 'runs' / job['job_id'] / 'result.json'
+                        db.execute("UPDATE jobs SET status='running', started_at=?, result_path=? WHERE job_id=?",
+                                   (now(), str(result_path), job['job_id']))
+            # Close the transaction before waiting so submissions remain available.
+            if row is None:
+                if not watch:
+                    return completed
+                stop_event.wait(poll_seconds)
+                continue
             args = argparse.Namespace(task=job['task'], timeout=job['timeout_seconds'],
                                       data_dir=str(root / 'runs'), job_id=job['job_id'])
             # Any unexpected failure leaves a running receipt and stops dispatch.
@@ -132,7 +142,11 @@ def drain(data_dir, execute=run_job):
                 with db:
                     db.execute("UPDATE jobs SET status=?, exit_code=?, finished_at=? WHERE job_id=? AND status='running'",
                                (result['status'], result['exit_code'], result['finished_at'], job['job_id']))
-            completed.append(job['job_id'])
+            if not watch:
+                completed.append(job['job_id'])
+            if result['status'] == 'interrupted':
+                raise KeyboardInterrupt
+        return completed
 
 
 def recover(data_dir, cleanup=cleanup_container):
@@ -197,7 +211,9 @@ def main():
     add.add_argument('task', choices=TASKS)
     add.add_argument('--timeout', type=float, default=30)
     add.add_argument('--request-key', required=True)
-    commands.add_parser('work')
+    work = commands.add_parser('work')
+    work.add_argument('--watch', action='store_true')
+    work.add_argument('--poll-seconds', type=float, default=2)
     commands.add_parser('recover')
     listing = commands.add_parser('list')
     listing.add_argument('--limit', type=int, default=50)
@@ -208,7 +224,9 @@ def main():
         if args.operation == 'recover':
             result = {'recovered': recover(args.data_dir)}
         elif args.operation == 'work':
-            result = {'completed': drain(args.data_dir)}
+            if args.watch:
+                print('Watching queue; Ctrl+C to stop. Poll interval: ' + str(args.poll_seconds), flush=True)
+            result = {'completed': drain(args.data_dir, watch=args.watch, poll_seconds=args.poll_seconds)}
         elif args.operation == 'submit':
             result = submit(args.data_dir, args.task, args.timeout, args.request_key)
         elif args.operation == 'cancel':
@@ -221,6 +239,9 @@ def main():
             result = inspect(args.data_dir, limit=args.limit)
         print(json.dumps(result, indent=2))
         return 0
+    except KeyboardInterrupt:
+        print('Worker stopped.', flush=True)
+        return 130
     except (OSError, RuntimeError, ValueError, sqlite3.Error) as error:
         print('Error: ' + str(error), file=sys.stderr)
         return 1
