@@ -52,7 +52,7 @@ test('summary distinguishes monitoring limit from task timeout', () => {
 test('template uses credential selection, bounded requests, and no submission loop', () => {
   assert.equal(workflow.active,false);
   for(const n of workflow.nodes.filter(n=>n.type==='n8n-nodes-base.httpRequest')) {
-    assert.equal(n.parameters.options.timeout,5000);
+    assert.equal(n.parameters.options.timeout,n.name==='Desktop Notification'?30000:5000);
     assert.equal(n.parameters.genericAuthType,'httpHeaderAuth');
     assert.equal(n.retryOnFail,false);
     assert.equal(n.credentials,undefined);
@@ -62,4 +62,12 @@ test('template uses credential selection, bounded requests, and no submission lo
   assert.equal(workflow.connections.If.main[1][0].node,'Result Summary');
   assert.equal(node('Tracking Setup').parameters.jsCode.includes('max_checks: 12'),true);
   assert.equal(node('Tracking Setup').parameters.jsCode.includes('Date.now() + 120000'),true);
+});
+
+test('notification follows the final summary and serializes only that input', () => {
+  const notification=node('Desktop Notification');
+  assert.equal(workflow.connections['Result Summary'].main[0][0].node,'Desktop Notification');
+  assert.equal(notification.parameters.url,'http://host.docker.internal:8787/notifications');
+  assert.equal(notification.parameters.method,'POST');
+  assert.equal(notification.parameters.jsonBody,'={{ JSON.stringify($json) }}');
 });
