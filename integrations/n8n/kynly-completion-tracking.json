@@ -20,7 +20,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\n  \"task\": \"tests\",\n  \"request_key\": \"n8n-completion-002\",\n  \"timeout_seconds\": 30\n}",
+        "jsonBody": "{\n  \"task\": \"tests\",\n  \"request_key\": \"n8n-desktop-001\",\n  \"timeout_seconds\": 30\n}",
         "options": {
           "timeout": 5000
         }
@@ -140,6 +140,29 @@
       ],
       "id": "c5846af9-6b70-4061-b2fa-d13425c7f075",
       "name": "Result Summary"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8787/notifications",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1520,
+        112
+      ],
+      "id": "9c1adac6-2809-4bad-86a8-33c250f049e3",
+      "name": "Desktop Notification",
+      "retryOnFail": false
     }
   ],
   "connections": {
@@ -221,6 +244,17 @@
         [
           {
             "node": "Check Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Result Summary": {
+      "main": [
+        [
+          {
+            "node": "Desktop Notification",
             "type": "main",
             "index": 0
           }
