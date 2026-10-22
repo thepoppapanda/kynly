@@ -24,7 +24,9 @@ No action buttons or arbitrary scripts are constructed from message text; XML
 text nodes escape title/message content. Title limit80, message limit500.
 
 The script uses Windows PowerShell5.1 and Windows Runtime native toast APIs,
-with the existing Microsoft.Windows.PowerShell shortcut identity. It requires an
+with the registered native Windows PowerShell shortcut identity. It checks both
+the legacy Microsoft.Windows.PowerShell ID and the system-directory path-based
+ID observed on the user's PC. It excludes x86, ISE and third-party shortcuts. It requires an
 interactive signed-in Windows user, matching the host's current task setup.
 No administrator privileges or credential are required for the standalone test.
 It was reviewed on the Linux development environment; Windows rendering and
@@ -36,3 +38,7 @@ coordinator notification request from n8n's final summary. It should distinguish
 passed, unsuccessful jobs, and monitoring limits. Delivery remains separate from
 job outcome; suppressed notifications must not change a test result. Discord
 can later be another destination without changing the completion monitor.
+
+The first Windows test found a path-based Windows PowerShell AppID rather than
+the initially assumed legacy ID. The script now selects the actual registered
+entry. Display through this identity still requires a repeat visual test.
