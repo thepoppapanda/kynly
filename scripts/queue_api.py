@@ -10,6 +10,7 @@ import sqlite3
 import sys
 
 import job_queue as queue
+from desktop_notifications import notify
 
 JOB_PATH = re.compile(r'/jobs/(job-[0-9a-f]{32})(/cancel)?')
 PUBLIC_FIELDS = ('sequence', 'job_id', 'request_key', 'task', 'timeout_seconds',
@@ -56,6 +57,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, {'jobs': [public(j) for j in queue.inspect(self.server.data_dir)]})
             elif self.command == 'GET' and match and not match[2]:
                 self.reply(200, public(queue.inspect(self.server.data_dir, match[1])))
+            elif self.command == 'POST' and self.path == '/notifications':
+                self.reply(200, notify(self.server.data_dir, self.body()))
             elif self.command == 'POST' and self.path == '/jobs':
                 body = self.body()
                 if not isinstance(body, dict) or set(body) - {'task', 'timeout_seconds', 'request_key'}:
