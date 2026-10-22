@@ -25,9 +25,11 @@ try {
     $null = [Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime]
     $null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
     $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId)
-    if ($notifier.Setting.ToString() -ne 'Enabled') {
-        throw ('Windows notification setting is ' + $notifier.Setting.ToString())
+    if ($null -eq $notifier) {
+        throw 'Windows did not return a toast notifier.'
     }
+    # Setting is not reliably projected in Windows PowerShell. Submit through
+    # Show() and verify display instead of dereferencing an optional value.
     $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
     $safeTitle = [System.Security.SecurityElement]::Escape($Title)
     $safeMessage = [System.Security.SecurityElement]::Escape($Message)
