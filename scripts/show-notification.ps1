@@ -29,15 +29,16 @@ try {
         throw ('Windows notification setting is ' + $notifier.Setting.ToString())
     }
     $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
-    $xml.LoadXml('<toast><visual><binding template="ToastGeneric"><text></text><text></text></binding></visual></toast>')
-    $texts = $xml.GetElementsByTagName('text')
-    $null = $texts.Item(0).AppendChild($xml.CreateTextNode($Title))
-    $null = $texts.Item(1).AppendChild($xml.CreateTextNode($Message))
+    $safeTitle = [System.Security.SecurityElement]::Escape($Title)
+    $safeMessage = [System.Security.SecurityElement]::Escape($Message)
+    $xml.LoadXml('<toast><visual><binding template="ToastGeneric"><text>' + $safeTitle + '</text><text>' + $safeMessage + '</text></binding></visual></toast>')
     $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
     $notifier.Show($toast)
     Start-Sleep -Seconds 2
     Write-Output 'Notification submitted to Windows. Confirm the banner or Notification Center visually.'
 } catch {
-    Write-Error $_
+    [Console]::Error.WriteLine($_.Exception.Message)
+    [Console]::Error.WriteLine($_.ScriptStackTrace)
+    [Console]::Error.WriteLine($_.InvocationInfo.PositionMessage)
     exit 1
 }
