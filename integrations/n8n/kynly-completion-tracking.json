@@ -1,0 +1,235 @@
+{
+  "name": "Kynly Completion Tracking",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "3a9f00ef-797a-466c-beb3-a3b79890e6a3",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8787/jobs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"task\": \"tests\",\n  \"request_key\": \"n8n-completion-002\",\n  \"timeout_seconds\": 30\n}",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        160,
+        16
+      ],
+      "id": "4d16b551-26cf-4e9a-af98-3f8460844384",
+      "name": "Submit Job",
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const job = $input.first().json;\n\nif (!/^job-[0-9a-f]{32}$/.test(job.job_id)) {\n  throw new Error('Submission did not return a valid job ID');\n}\n\nreturn [{\n  json: {\n    job_id: job.job_id,\n    request_key: job.request_key,\n    initial_status: job.status,\n    checks: 0,\n    max_checks: 12,\n    deadline_ms: Date.now() + 120000\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        16
+      ],
+      "id": "9d42181e-e03c-42c5-9f71-142c5fc11055",
+      "name": "Tracking Setup"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'http://host.docker.internal:8787/jobs/' + $json.job_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        608,
+        16
+      ],
+      "id": "958fd0d5-4616-4b28-96e4-c9929783f31b",
+      "name": "Check Job",
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const tracking = $('Tracking Setup').first(0, 0).json;\nconst job = $input.first().json;\nconst checks = $runIndex + 1;\n\nif (job.job_id !== tracking.job_id) {\n  throw new Error('Status response has the wrong job ID');\n}\n\nconst terminal = [\n  'passed', 'failed', 'timed_out', 'cancelled', 'interrupted'\n].includes(job.status);\n\nif (!terminal && !['queued', 'running'].includes(job.status)) {\n  throw new Error('Unexpected job status: ' + job.status);\n}\n\nconst limitReached =\n  checks >= tracking.max_checks ||\n  Date.now() + 5000 >= tracking.deadline_ms;\n\nreturn [{\n  json: {\n    ...tracking,\n    status: job.status,\n    exit_code: job.exit_code,\n    checks,\n    should_continue: !terminal && !limitReached,\n    monitoring_outcome: terminal\n      ? 'job_finished'\n      : limitReached\n        ? 'monitoring_limit_reached'\n        : 'waiting'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        16
+      ],
+      "id": "6f1ec302-b971-4850-891d-57cde4c6d933",
+      "name": "Evaluate Status"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5e9bf58d-5a6a-4fbd-bf9c-14cf997100c5",
+              "leftValue": "={{ $json.should_continue }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1056,
+        16
+      ],
+      "id": "9d3b9bf1-6332-4657-a1bd-cf170c2de2a3",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1280,
+        -80
+      ],
+      "id": "0d98c360-552b-4a76-a029-96b94265af26",
+      "name": "Wait"
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nconst limitReached =\n  result.monitoring_outcome === 'monitoring_limit_reached';\n\nconst outcome = limitReached\n  ? 'monitoring_limit_reached'\n  : result.status === 'passed'\n    ? 'passed'\n    : 'job_unsuccessful';\n\nreturn [{\n  json: {\n    job_id: result.job_id,\n    request_key: result.request_key,\n    outcome,\n    job_status: result.status,\n    exit_code: result.exit_code ?? null,\n    checks: result.checks,\n    message: limitReached\n      ? `Monitoring stopped after ${result.checks} checks. Last observed job status: ${result.status}. The job was not cancelled.`\n      : `Job ${result.job_id} finished with status ${result.status} and exit code ${result.exit_code ?? 'unavailable'}.`\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1280,
+        112
+      ],
+      "id": "c5846af9-6b70-4061-b2fa-d13425c7f075",
+      "name": "Result Summary"
+    }
+  ],
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Submit Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Submit Job": {
+      "main": [
+        [
+          {
+            "node": "Tracking Setup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tracking Setup": {
+      "main": [
+        [
+          {
+            "node": "Check Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Job": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Status": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Result Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Check Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
