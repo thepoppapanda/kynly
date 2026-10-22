@@ -17,11 +17,13 @@ existing Windows PowerShell Start-menu application identity, so Windows may labe
 the sender Windows PowerShell. The message submission report is not proof that
 a banner was displayed; verify visually or press Win+N for Notification Center.
 Notifications/Do Not Disturb and Windows per-app settings may suppress banners.
-If the registered identity is missing or its notification setting disabled, the
-script reports an error instead of silently claiming success. Dedicated Kynly
+If the registered identity is missing or Show() throws, the script reports the
+original error and location. Windows may suppress a submitted toast; visual
+confirmation is required. The optional Setting property returned null on this PC
+and is not used as a prerequisite for submission. Dedicated Kynly
 application identity, notification click actions and branding remain future work.
 No action buttons or arbitrary scripts are constructed from message text; XML
-text nodes escape title/message content. Title limit80, message limit500.
+XML escaping protects title/message content. Title limit80, message limit500.
 
 The script uses Windows PowerShell5.1 and Windows Runtime native toast APIs,
 with the registered native Windows PowerShell shortcut identity. It checks both
