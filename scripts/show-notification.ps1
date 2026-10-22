@@ -9,11 +9,18 @@ $ErrorActionPreference = 'Stop'
 try {
     # Reuse the installed Windows PowerShell shortcut identity for this first test.
     # Dedicated Kynly application registration and click actions are future work.
-    $appId = 'Microsoft.Windows.PowerShell'
-    $registered = Get-StartApps | Where-Object { $_.AppID -eq $appId } | Select-Object -First 1
+    $apps = @(Get-StartApps)
+    $registered = $apps | Where-Object { $_.AppID -eq 'Microsoft.Windows.PowerShell' } | Select-Object -First 1
+    if (!$registered) {
+        # Use the native system-directory shortcut identity, not x86/ISE/VS/Anaconda.
+        $registered = $apps | Where-Object {
+            $_.AppID -ieq '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+        } | Select-Object -First 1
+    }
     if (!$registered) {
         throw 'Windows PowerShell notification identity was not found. Report this error before continuing.'
     }
+    $appId = $registered.AppID
     $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
     $null = [Windows.UI.Notifications.ToastNotification, Windows.UI.Notifications, ContentType = WindowsRuntime]
     $null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
