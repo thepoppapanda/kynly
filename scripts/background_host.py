@@ -11,6 +11,7 @@ import uuid
 
 import job_queue as queue
 from queue_api import make_server
+from desktop_notifications import dispatch_subscriptions
 from run_job import now, save_json, workspace_lock
 
 RUNTIME = Path(__file__).resolve().parents[1] / '.kynly' / 'background'
@@ -25,6 +26,8 @@ def serve(data_dir, token, runtime, instance, port=8787):
     with workspace_lock(runtime / 'host.lock'):
         server = None
         api_thread = None
+        notification_thread = None
+        notification_stop = threading.Event()
         state = {'instance': instance, 'pid': os.getpid(), 'status': 'starting',
                  'started_at': now(), 'data_dir': str(Path(data_dir).resolve())}
         try:
@@ -34,6 +37,15 @@ def serve(data_dir, token, runtime, instance, port=8787):
             server = make_server(data_dir, token, port)
             api_thread = threading.Thread(target=server.serve_forever, daemon=True)
             api_thread.start()
+            def watch_notifications():
+                while not notification_stop.is_set():
+                    try:
+                        dispatch_subscriptions(data_dir, stop_event=notification_stop)
+                    except Exception as error:
+                        print('Notification dispatcher error: ' + str(error), flush=True)
+                    notification_stop.wait(2)
+            notification_thread = threading.Thread(target=watch_notifications, daemon=True)
+            notification_thread.start()
             def watch_stop():
                 while not stop.wait(0.2):
                     if (runtime / (instance + '.stop')).exists():
@@ -55,6 +67,9 @@ def serve(data_dir, token, runtime, instance, port=8787):
             raise
         finally:
             stop.set()
+            notification_stop.set()
+            if notification_thread:
+                notification_thread.join(timeout=25)
             if server:
                 server.shutdown()
                 server.server_close()
