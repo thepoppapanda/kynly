@@ -73,6 +73,16 @@ class ApiTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             api.make_server(self.temp.name, 'short', 0)
 
+    def test_submission_records_opt_in_without_changing_task(self):
+        code,job=self.request('/jobs',{'task':'tests','request_key':'api-desktop-opt-in','notify_desktop':True})
+        self.assertEqual(code,200)
+        self.assertTrue(job['desktop_notification_requested'])
+        self.assertEqual(job['task'],'tests')
+        code,again=self.request('/jobs',{'task':'tests','request_key':'api-desktop-opt-in'})
+        self.assertEqual(again['job_id'],job['job_id'])
+        self.assertTrue(again['desktop_notification_requested'])
+        self.assertEqual(self.request('/jobs',{'task':'tests','request_key':'invalid-opt-in','notify_desktop':'yes'})[0],400)
+
 
 if __name__ == '__main__':
     unittest.main()
