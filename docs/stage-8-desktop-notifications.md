@@ -156,3 +156,15 @@ Only after this end-to-end check update agent instructions to describe verified
 Windows alerts. Existing rules still caution against unconfigured notifications.
 API subscription and dispatch decisions are tested with mocked Windows senders;
 real Windows automatic delivery remains pending.
+
+
+### Validated OpenClaw checkpoint
+
+The user confirmed submission openclaw-desktop-001 returned notification_requested
+true and produced a desktop completion banner. Repeating that key returned the
+same job with passed/0 and no second banner. Tests-only job scope is unchanged.
+KYNLY_JOB_RULES.md now describes opt-in Windows alerts, deduplication, host/session
+requirements, and the distinction from later chat messages. Install the updated
+managed block into the workspace AGENTS.md and use a fresh chat to verify its
+explanation. The repository rule update does not update the running workspace by
+itself. No Discord integration or guaranteed visual delivery is claimed.
