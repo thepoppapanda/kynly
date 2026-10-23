@@ -7,7 +7,7 @@ const source=await readFile(join(dirname(fileURLToPath(import.meta.url)),'RESEAR
 const files={
   'AGENTS.md':source,
   'SOUL.md':'Be concise, truthful, and precise. Research public sources within the user\'s call budget.\n',
-  'IDENTITY.md':'Name: Research\nRole: Public-source research\n',
+  'IDENTITY.md':'Name: Ruby\nRole: Public-source research\n',
   'USER.md':'The user is building Kynly and tests each component incrementally.\n',
   'TOOLS.md':'Only web_search and web_fetch are intended. No job-control tools.\n',
   'HEARTBEAT.md':'# No periodic tasks configured\n',
