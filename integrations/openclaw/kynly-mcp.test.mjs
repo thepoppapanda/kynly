@@ -11,7 +11,7 @@ test('initialization and scoped catalog', async () => {
   const handle = createHandler();
   assert.equal((await handle(rpc('initialize'))).result.serverInfo.name, 'kynly-tools');
   const names = (await handle(rpc('tools/list'))).result.tools.map(t => t.name);
-  assert.deepEqual(names, ['kynly_submit_tests', 'kynly_jobs_list', 'kynly_job_status']);
+  assert.deepEqual(names, ['kynly_save_research_report', 'kynly_submit_tests', 'kynly_jobs_list', 'kynly_job_status']);
   assert.equal(await handle({ jsonrpc: '2.0', method: 'notifications/initialized' }), undefined);
 });
 test('rejects unknown tools and traversal without reading credentials', async () => {
