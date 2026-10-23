@@ -78,3 +78,48 @@ def notify(data_dir, body, send=windows_toast):
         with db:
             db.execute('UPDATE desktop_notifications SET receipt=? WHERE notification_key=?', (json.dumps(receipt),key))
         return receipt
+
+
+def subscriptions(db):
+    db.execute('''CREATE TABLE IF NOT EXISTS desktop_subscriptions (
+        job_id TEXT PRIMARY KEY, requested_at TEXT NOT NULL, completed_at TEXT,
+        receipt TEXT)''')
+    db.commit()
+
+
+def subscribe(data_dir, job_id):
+    queue.inspect(data_dir, job_id)
+    with queue.database(data_dir) as db:
+        subscriptions(db)
+        with db:
+            db.execute('INSERT OR IGNORE INTO desktop_subscriptions(job_id,requested_at) VALUES (?,?)',(job_id,now()))
+
+
+def notification_requested(data_dir, job_id):
+    with queue.database(data_dir) as db:
+        subscriptions(db)
+        return db.execute('SELECT 1 FROM desktop_subscriptions WHERE job_id=?',(job_id,)).fetchone() is not None
+
+
+def dispatch_subscriptions(data_dir, send=windows_toast, stop_event=None):
+    with queue.database(data_dir) as db:
+        subscriptions(db)
+        rows = [dict(row) for row in db.execute('''SELECT j.* FROM desktop_subscriptions s
+            JOIN jobs j ON j.job_id=s.job_id WHERE s.completed_at IS NULL
+            AND j.status IN ('passed','failed','timed_out','cancelled','interrupted')
+            ORDER BY j.sequence LIMIT 10''')]
+    receipts=[]
+    for job in rows:
+        if stop_event is not None and stop_event.is_set():
+            break
+        receipt = notify(data_dir, {
+            'job_id':job['job_id'],'request_key':job['request_key'],
+            'outcome':'passed' if job['status']=='passed' else 'job_unsuccessful',
+            'job_status':job['status'],'exit_code':job['exit_code'],'checks':1,
+        },send)
+        with queue.database(data_dir) as db:
+            with db:
+                db.execute('UPDATE desktop_subscriptions SET completed_at=?,receipt=? WHERE job_id=?',
+                           (now(),json.dumps(receipt),job['job_id']))
+        receipts.append(receipt)
+    return receipts
