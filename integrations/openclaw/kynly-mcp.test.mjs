@@ -66,6 +66,8 @@ test('submission fixes task and timeout and forwards stable retry key', async ()
     const request = rpc('tools/call', { name: 'kynly_submit_tests', arguments: { request_key: 'openclaw-test-001' } });
     for (let i=0; i<2; i++) assert.equal((await handle(request)).result.isError, undefined);
     assert.deepEqual(bodies, Array(2).fill({ task: 'tests', timeout_seconds: 30, request_key: 'openclaw-test-001' }));
+    await handle(rpc('tools/call', {name:'kynly_submit_tests',arguments:{request_key:'openclaw-alert-001',notify_desktop:true}}));
+    assert.deepEqual(bodies[2],{task:'tests',timeout_seconds:30,request_key:'openclaw-alert-001',notify_desktop:true});
   } finally {
     await new Promise(resolve => server.close(resolve));
     await rm(root, { recursive: true });
@@ -73,7 +75,7 @@ test('submission fixes task and timeout and forwards stable retry key', async ()
 });
 test('submission rejects task overrides, timeout overrides, and invalid keys', async () => {
   const handle = createHandler({ tokenFile: '/missing' });
-  for (const args of [{request_key:'ok',task:'probe-failure'}, {request_key:'ok',timeout_seconds:120}, {request_key:''}, {request_key:'a'.repeat(101)}, {request_key:'bad key'}, {request_key:7}]) {
+  for (const args of [{request_key:'ok',task:'probe-failure'}, {request_key:'ok',timeout_seconds:120}, {request_key:''}, {request_key:'a'.repeat(101)}, {request_key:'bad key'}, {request_key:7}, {request_key:'ok',notify_desktop:'yes'}]) {
     const response = await handle(rpc('tools/call', { name: 'kynly_submit_tests', arguments: args }));
     assert.equal(response.result.isError, true);
     assert.equal(response.result.content[0].text, 'Unknown tool or invalid arguments');
