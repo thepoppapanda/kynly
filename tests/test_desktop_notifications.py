@@ -59,3 +59,32 @@ class NotificationTests(unittest.TestCase):
         sent=[]
         desktop.notify(self.root,dict(self.body,message='arbitrary external text'),lambda *args:sent.append(args))
         self.assertNotIn('arbitrary external text',sent[0][1])
+
+
+class SubscriptionTests(unittest.TestCase):
+    setUp = NotificationTests.setUp
+    def test_pending_job_waits_for_completion(self):
+        job=queue.submit(self.root,'tests',30,'pending')
+        desktop.subscribe(self.root,job['job_id'])
+        sent=[]
+        desktop.dispatch_subscriptions(self.root,lambda *args:sent.append(args))
+        self.assertEqual(sent,[])
+        with queue.database(self.root) as db:
+            with db:
+                db.execute("UPDATE jobs SET status='passed',exit_code=0 WHERE job_id=?",(job['job_id'],))
+        self.assertEqual(len(desktop.dispatch_subscriptions(self.root,lambda *args:sent.append(args))),1)
+        self.assertEqual(len(sent),1)
+        self.assertEqual(desktop.dispatch_subscriptions(self.root,lambda *_:self.fail('duplicate')),[])
+
+    def test_existing_n8n_receipt_suppresses_background_toast(self):
+        sent=[]
+        desktop.notify(self.root,self.body,lambda *args:sent.append(args))
+        desktop.subscribe(self.root,self.body['job_id'])
+        desktop.subscribe(self.root,self.body['job_id'])
+        receipts=desktop.dispatch_subscriptions(self.root,lambda *args:sent.append(args))
+        self.assertTrue(receipts[0]['duplicate'])
+        self.assertEqual(len(sent),1)
+
+    def test_no_opt_in_means_no_alert(self):
+        self.assertFalse(desktop.notification_requested(self.root,self.body['job_id']))
+        self.assertEqual(desktop.dispatch_subscriptions(self.root,lambda *_:self.fail('unexpected alert')),[])
