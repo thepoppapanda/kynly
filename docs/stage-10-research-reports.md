@@ -55,3 +55,46 @@ already retrieved research with one save call. Expect report ID/path matching
 PowerShell inspection. Combined search/fetch/save and repeated-save behavior are
 subsequent tests, still within the unchanged60-second agent timeout. Installer
 identity seed now says Ruby so future explicit installs preserve that display name.
+
+
+## Validated reviewed-note checkpoint
+
+Direct Windows API save returned saved; repeating the same content/key returned
+the same report ID with duplicate true. The user inspected the Markdown file and
+confirmed title, summary and source URL. Ruby's save smoke test completed in
+27 seconds. A model-driven duplicate request timed out, but the identical direct
+MCP call returned duplicate true and the same ID. Storage deduplication works;
+model responsiveness is a separate concern.
+
+Per-agent allowlists were set/read through the CLI because raw configuration
+inspection showed only minimal named agent entries without tool blocks.
+Slate's seven-name allowlist was pinned before the global report permission was
+appended. Ruby's allowlist is web_search, web_fetch,
+kynly__kynly_save_research_report. Both validated; actual exhaustive access-control
+auditing is outside this checkpoint.
+
+A search/fetch report attempt timed out after both tools ran. One diagnostic CLI
+run used a 120-second per-run budget; normal configuration remained 60 seconds.
+Its trajectory actually finished in 24 seconds: simultaneous search+fetch, first
+fetch error, then a second fetch. This violated the sequential one-search,
+one-fetch and stop-on-error instructions. The resulting answer omitted its source
+and confused Command Prompt activation with PowerShell. A follow-up continued
+the same incorrect command. Do not count that as validated independent research.
+
+The official documentation was separately checked and distinguishes
+Scripts/activate.bat for Command Prompt and Scripts/Activate.ps1 for PowerShell.
+Ruby was then explicitly given reviewed report content and asked only to save.
+It completed one reviewed-note save in 26 seconds. The user inspected
+report-4b7ca5bdee67b04b0557a6948cc5e88d/report.md and confirmed the exact creation
+and PowerShell activation commands, plus the source URL. This validates saving
+user-approved notes, not unattended research generation.
+
+A copied source title displayed mojibake for an em dash when read through
+PowerShell. Files are written as UTF-8; verify with Get-Content -Encoding UTF8
+before assuming on-disk corruption. That display check remains pending.
+
+Current safe operating scope: manually review research content, then ask Ruby to
+save that exact approved note. Do not automate unreviewed reports or claim prompt
+instructions enforce tool-call order/budgets. Remaining work includes sequencing,
+evidence accuracy under truncation, intermittent model stalls, and a consistently
+bounded research-to-report path.
