@@ -10,7 +10,7 @@ import sqlite3
 import sys
 
 import job_queue as queue
-from desktop_notifications import notify
+from desktop_notifications import notify, subscribe, notification_requested
 
 JOB_PATH = re.compile(r'/jobs/(job-[0-9a-f]{32})(/cancel)?')
 PUBLIC_FIELDS = ('sequence', 'job_id', 'request_key', 'task', 'timeout_seconds',
@@ -61,16 +61,21 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(200, notify(self.server.data_dir, self.body()))
             elif self.command == 'POST' and self.path == '/jobs':
                 body = self.body()
-                if not isinstance(body, dict) or set(body) - {'task', 'timeout_seconds', 'request_key'}:
-                    raise ValueError('Expected only task, timeout_seconds, and request_key')
+                if not isinstance(body, dict) or set(body) - {'task', 'timeout_seconds', 'request_key', 'notify_desktop'}:
+                    raise ValueError('Expected task, timeout_seconds, request_key, and optional notify_desktop')
                 task, key = body.get('task'), body.get('request_key')
                 timeout = body.get('timeout_seconds', 30)
                 if not isinstance(task, str) or not isinstance(key, str):
                     raise ValueError('task and request_key must be strings')
                 if type(timeout) not in (int, float) or not math.isfinite(timeout):
                     raise ValueError('timeout_seconds must be a finite number')
+                requested = body.get('notify_desktop', False)
+                if type(requested) is not bool:
+                    raise ValueError('notify_desktop must be a boolean')
                 job = queue.submit(self.server.data_dir, task, timeout, key)
-                self.reply(200, public(job))
+                if requested:
+                    subscribe(self.server.data_dir, job['job_id'])
+                self.reply(200, dict(public(job), desktop_notification_requested=notification_requested(self.server.data_dir, job['job_id'])))
             elif self.command == 'POST' and match and match[2]:
                 if self.body() != {}:
                     raise ValueError('Cancellation body must be an empty JSON object')
