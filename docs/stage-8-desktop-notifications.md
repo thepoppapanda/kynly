@@ -103,3 +103,56 @@ automatically acquire an n8n monitor or notification. API stays loopback/token
 protected, and the MCP allowlist is unchanged. No arbitrary shell-command route
 or Discord integration is added. Dedicated Kynly toast identity remains future
 work; sender may still appear as Windows PowerShell.
+
+## OpenClaw completion-alert opt-in
+
+The user confirmed all three n8n alert paths: passed, failed/7, and monitoring limit.
+Restore n8n tasktests/max_checks12 after diagnostics. OpenClaw opt-in now works
+independently of n8n through the existing background host.
+
+POST /jobs accepts optional boolean notify_desktop. True stores an idempotent
+subscription; repeating a job's request key never clears that preference. The
+response includes desktop_notification_requested after the preference is saved.
+No task/timeout idempotency rule changes. Omitted/false does not subscribe a new
+job. A true repeat can opt an existing job into one completion alert. This is an
+additive preference, not a notification cancellation API.
+
+Adapter0.3.0 adds optional notify_desktop boolean to kynly_submit_tests. Its task
+and timeout remain fixed. The background host scans up to10 eligible terminal
+subscriptions every2seconds; it doesn't ask the model to poll and doesn't need
+n8n. It uses the same desktop notification attempt receipts as /notifications.
+Repeats and existing terminal alerts are suppressed. Failures/uncertain attempts
+remain recorded without automatic redelivery. Alerts are Windows desktop only,
+not future OpenClaw chat replies or Discord messages.
+
+Pending subscriptions survive host restarts. Jobs can finish without the host
+running, but delivery waits until the host next runs. On graceful host stop,
+pending alerts can likewise wait until restart. The notifier stops scheduling
+new attempts on shutdown and waits up to25seconds for an active attempt. Job
+execution does not depend on notification success. Unresolved running jobs still
+require explicit recovery before host startup; recovery itself does not display
+alerts. Recovered terminal jobs can be alerted after the host starts.
+
+Stop the host, wait for stopped, pull, and run tests (no live watch worker):
+
+```powershell
+py -3 .\scripts\background_host.py stop
+py -3 .\scripts\background_host.py status
+git pull --ff-only
+py -3 -m unittest discover -s tests -v
+py -3 .\scripts\background_host.py start --data-dir D:\KynlyData\queue
+docker compose cp .\integrations\openclaw\kynly-mcp.mjs openclaw:/home/node/.openclaw/kynly-tools/kynly-mcp.mjs
+docker compose cp .\integrations\openclaw\kynly-mcp.test.mjs openclaw:/home/node/.openclaw/kynly-tools/kynly-mcp.test.mjs
+docker compose exec openclaw node --test /home/node/.openclaw/kynly-tools/kynly-mcp.test.mjs
+docker compose restart openclaw
+```
+
+Expect50 Python tests and6 Node tests. A fresh Slate conversation should call
+kynly__kynly_submit_tests once with request_keyopenclaw-desktop-001 and
+notify_desktoptrue. Report the returned job ID and desktop_notification_requested;
+no status-poll loop. Expect one completion banner soon after the job finishes.
+Repeat the same key and true preference: same job ID, no new execution/banner.
+Only after this end-to-end check update agent instructions to describe verified
+Windows alerts. Existing rules still caution against unconfigured notifications.
+API subscription and dispatch decisions are tested with mocked Windows senders;
+real Windows automatic delivery remains pending.
