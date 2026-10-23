@@ -83,6 +83,18 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(again['desktop_notification_requested'])
         self.assertEqual(self.request('/jobs',{'task':'tests','request_key':'invalid-opt-in','notify_desktop':'yes'})[0],400)
 
+    def test_report_endpoint_persists_and_deduplicates(self):
+        body={'request_key':'http-report-001','title':'HTTP report test','summary':'A stored summary.','sources':[{'title':'Python','url':'https://docs.python.org/3/library/venv.html'}]}
+        self.assertEqual(self.request('/research/reports',body,token=False)[0],401)
+        code,receipt=self.request('/research/reports',body)
+        self.assertEqual(code,200)
+        self.assertEqual(receipt['status'],'saved')
+        self.assertTrue(Path(receipt['report_path']).is_file())
+        code,again=self.request('/research/reports',body)
+        self.assertTrue(again['duplicate'])
+        self.assertEqual(again['report_id'],receipt['report_id'])
+        self.assertEqual(self.request('/research/reports',dict(body,summary='Different'))[0],409)
+
 
 if __name__ == '__main__':
     unittest.main()
