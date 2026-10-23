@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
 const tools = [
-  { name: 'kynly_submit_tests', description: 'Queue the fixed Kynly tests task with a 30-second timeout. Supply the user-requested request_key; reuse it for retries to avoid duplicate jobs. A queued/running receipt is not a passed test result.', inputSchema: { type: 'object', properties: { request_key: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$' } }, required: ['request_key'], additionalProperties: false }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } },
+  { name: 'kynly_submit_tests', description: 'Queue the fixed Kynly tests task with a 30-second timeout. Supply the user-requested request_key; reuse it for retries to avoid duplicate jobs. Optional notify_desktop=true requests a Windows desktop alert when this job finishes; it does not send a chat reply. The host must be running. A queued/running receipt is not a passed test result.', inputSchema: { type: 'object', properties: { request_key: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$' }, notify_desktop: { type: 'boolean', description: 'Request a Windows desktop completion alert only when the user asks for one.' } }, required: ['request_key'], additionalProperties: false }, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } },
   { name: 'kynly_jobs_list', description: 'List up to 50 recent Kynly jobs and their recorded statuses. Does not run jobs.', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: { readOnlyHint: true } },
   { name: 'kynly_job_status', description: 'Get the recorded status and exit code of one Kynly job by its exact job ID.', inputSchema: { type: 'object', properties: { job_id: { type: 'string', pattern: '^job-[0-9a-f]{32}$' } }, required: ['job_id'], additionalProperties: false }, annotations: { readOnlyHint: true } },
 ];
@@ -14,7 +14,7 @@ export function createHandler({ tokenFile = '/home/node/.openclaw/kynly-tools/ap
     if (!message || message.jsonrpc !== '2.0' || typeof message.method !== 'string') return { jsonrpc: '2.0', id: message?.id ?? null, error: { code: -32600, message: 'Invalid request' } };
     if (message.id === undefined) return undefined;
     const reply = result => ({ jsonrpc: '2.0', id: message.id, result });
-    if (message.method === 'initialize') return reply({ protocolVersion: '2025-03-26', capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'kynly-tools', version: '0.2.0' } });
+    if (message.method === 'initialize') return reply({ protocolVersion: '2025-03-26', capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'kynly-tools', version: '0.3.0' } });
     if (message.method === 'ping') return reply({});
     if (message.method === 'tools/list') return reply({ tools });
     if (message.method !== 'tools/call') return { jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Method not found' } };
@@ -27,10 +27,10 @@ export function createHandler({ tokenFile = '/home/node/.openclaw/kynly-tools/ap
       let method = 'GET';
       if (name === 'kynly_jobs_list' && Object.keys(args).length === 0) path = '/jobs';
       else if (name === 'kynly_job_status' && Object.keys(args).length === 1 && /^job-[0-9a-f]{32}$/.test(args.job_id)) path = '/jobs/' + args.job_id;
-      else if (name === 'kynly_submit_tests' && Object.keys(args).length === 1 && typeof args.request_key === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(args.request_key)) {
+      else if (name === 'kynly_submit_tests' && Object.keys(args).every(k => ['request_key','notify_desktop'].includes(k)) && (args.notify_desktop === undefined || typeof args.notify_desktop === 'boolean') && typeof args.request_key === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(args.request_key)) {
         path = '/jobs';
         method = 'POST';
-        body = JSON.stringify({ task: 'tests', timeout_seconds: 30, request_key: args.request_key });
+        body = JSON.stringify({ task: 'tests', timeout_seconds: 30, request_key: args.request_key, ...(args.notify_desktop === undefined ? {} : {notify_desktop:args.notify_desktop}) });
       }
       else throw Error('Unknown tool or invalid arguments');
       const token = (await readFile(tokenFile, 'utf8')).trim();
